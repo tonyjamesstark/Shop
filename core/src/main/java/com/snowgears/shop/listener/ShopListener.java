@@ -341,6 +341,7 @@ public class ShopListener implements Listener {
                         if (offlineTransactions != null && !offlineTransactions.isCalculating()) {
                             //only display the message if some transactions happened while they were offline
                             if(offlineTransactions.getNumTransactions() > 0) {
+                                plugin.offlineCache.add(player, offlineTransactions);
                                 List<String> messageList = ShopMessage.getUnformattedMessageList("offline", "summary");
                                 for (String message : messageList) {
                                     ShopMessage.sendMessage(message, player, offlineTransactions);
@@ -382,6 +383,7 @@ public class ShopListener implements Listener {
             //this automatically saves to file
             new PlayerExperience(player);
         }
+        plugin.offlineCache.remove(player);
     }
 
     @EventHandler (ignoreCancelled = true)

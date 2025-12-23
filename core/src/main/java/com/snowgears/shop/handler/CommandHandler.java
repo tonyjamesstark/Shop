@@ -53,6 +53,7 @@ public class CommandHandler extends BukkitCommand {
                     //these are commands all players have access to
                     sendCommandMessage("list", player);
                     sendCommandMessage("currency", player);
+                    sendCommandMessage("showOffline", player);
 
                     //these are commands only operators have access to
                     if (player.hasPermission("shop.operator") || player.isOp()) {
@@ -72,6 +73,8 @@ public class CommandHandler extends BukkitCommand {
                 sender.sendMessage("/"+this.getName()+" currency - information about currency being used on server");
                 sender.sendMessage("/"+this.getName()+" item refresh - refresh display items on all shops");
                 sender.sendMessage("/"+this.getName()+" reload - reload Shop plugin");
+                sender.sendMessage("/"+this.getName()+" showOffline - displays offline transactions since last login");
+
             }
         } else if (args.length == 1) {
             if (args[0].equalsIgnoreCase("list")) {
@@ -159,6 +162,17 @@ public class CommandHandler extends BukkitCommand {
                         return true;
                     }
                 }
+            }
+            else if(args[0].equalsIgnoreCase("showOffline")){
+                if (sender instanceof Player){
+                    Player player = (Player) sender;
+                    plugin.offlineCache.resendMessage(player);
+                    return true;
+                }
+                else{
+                    sender.sendMessage("showOffline can only be used by online players");
+                }
+                return true;
             }
         } else if (args.length == 2) {
             if (args[0].equalsIgnoreCase("item") && args[1].equalsIgnoreCase("refresh")) {

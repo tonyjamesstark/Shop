@@ -144,6 +144,8 @@ public class Shop extends JavaPlugin {
 
     private Metrics metrics;
 
+    public OfflineTransactionsCache offlineCache = new OfflineTransactionsCache();
+
     public static Shop getPlugin() {
         return plugin;
     }

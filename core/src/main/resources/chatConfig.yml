@@ -306,3 +306,5 @@ command:
    notify_stock: "&7Your notifications for your shops running out of stock are now [notify stock]"
    notify_on: "&aON"
    notify_off: "&cOFF"
+   showOffline: "&b/[plugin] showOffline &7- show the transactions that occurred offline since you last logged in"
+   showOffline_error: "No offline transactions found."
