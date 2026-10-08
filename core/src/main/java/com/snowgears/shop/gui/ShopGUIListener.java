@@ -184,19 +184,19 @@ public class ShopGUIListener implements Listener {
                                 if(Shop.getPlugin().usePerms()){
                                     if(player.hasPermission("shop.operator") || player.hasPermission("shop.gui.teleport")){
                                         if(!player.isOp()){
+                                            if(plugin.getTeleportCooldown() > 0){
+                                                int secondsRemaining = plugin.getShopListener().getTeleportCooldownRemaining(player);
+                                                if(secondsRemaining > 0){
+                                                    ShopMessage.sendMessage("interactionIssue", "teleportInsufficientCooldown", player, shop);
+                                                    plugin.getGuiHandler().closeWindow(player);
+                                                    return;
+                                                }
+                                            }
                                             if(plugin.getTeleportCost() > 0) {
                                                 if (EconomyUtils.hasSufficientFunds(player, player.getInventory(), plugin.getTeleportCost())) {
                                                     EconomyUtils.removeFunds(player, player.getInventory(), plugin.getTeleportCost());
                                                 } else {
                                                     ShopMessage.sendMessage("interactionIssue", "teleportInsufficientFunds", player, shop);
-                                                    plugin.getGuiHandler().closeWindow(player);
-                                                    return;
-                                                }
-                                            }
-                                            if(plugin.getTeleportCooldown() > 0){
-                                                int secondsRemaining = plugin.getShopListener().getTeleportCooldownRemaining(player);
-                                                if(secondsRemaining > 0){
-                                                    ShopMessage.sendMessage("interactionIssue", "teleportInsufficientCooldown", player, shop);
                                                     plugin.getGuiHandler().closeWindow(player);
                                                     return;
                                                 }
