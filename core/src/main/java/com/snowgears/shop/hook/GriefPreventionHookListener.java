@@ -2,11 +2,13 @@ package com.snowgears.shop.hook;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import javax.annotation.Nullable;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Cancellable;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -16,18 +18,20 @@ import com.snowgears.shop.event.PlayerCreateShopEvent;
 import com.snowgears.shop.event.PlayerDestroyShopEvent;
 import com.snowgears.shop.event.PlayerResizeShopEvent;
 import com.snowgears.shop.shop.AbstractShop;
-import com.snowgears.shop.event.PlayerInitializeShopEvent;
 import com.snowgears.shop.event.PlayerOpenShopEvent;
 
 import me.ryanhamshire.GriefPrevention.Claim;
 import me.ryanhamshire.GriefPrevention.ClaimPermission;
 import me.ryanhamshire.GriefPrevention.GriefPrevention;
-import me.ryanhamshire.GriefPrevention.events.ClaimChangeEvent;
 import me.ryanhamshire.GriefPrevention.events.ClaimCreatedEvent;
+import me.ryanhamshire.GriefPrevention.events.ClaimResizeEvent;
 import me.ryanhamshire.GriefPrevention.events.ClaimTransferEvent;
 
 
 public class GriefPreventionHookListener implements Listener {
+
+    private static final String OTHERS_SHOPS_MESSAGE = "You may not claim other players' shops.";
+    private static final String ADMIN_SHOPS_MESSAGE = "Admin shops must exist in admin claims only.";
 
     private GriefPrevention gpPlugin = null;
     private Shop plugin = null;
@@ -42,157 +46,155 @@ public class GriefPreventionHookListener implements Listener {
         }
     }
 
-    // check for build permissions
+    // Creating, destroying and resizing a shop needs build permission in every claim its blocks are in.
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onShopCreate(PlayerCreateShopEvent e) {
         if (!checkPluginEnabledAndVarSet())
             return;
-        AbstractShop created = e.getShop();
-        Claim claim = gpPlugin.dataStore.getClaimAt(created.getChestLocation(), false, null);
-        if (claim == null) {
-            claim = gpPlugin.dataStore.getClaimAt(created.getSignLocation(), false, null);
-            if (claim == null) {
-                // neither sign nor container is in a claim
-                return;
-            } else {
-                // only the sign is in a claim
-                e.setCancelled(true);
-                return;
-            }
-        }
-        if (!claim.contains(created.getSignLocation(), false, false)) {
-            // only the container is in a claim
-            e.setCancelled(true);
-            return;
-        }
-        String denialMsg = claim.checkPermission(e.getPlayer(), ClaimPermission.Build, null).get();
-        if (denialMsg == null) {
-            // no perms restrictions
-            return;
-        } else {
-            e.setCancelled(true);
-            e.getPlayer().sendMessage(denialMsg); // need to double check this isn't duplicate
-        }
+        denyWithoutBuild(e, e.getPlayer(), e.getShop());
     }
 
-    // check for build permissions
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onShopResize(PlayerResizeShopEvent e) {
-        // when a block would increase the inventory of a shop (e.g. adding a chest-> double)
         if (!checkPluginEnabledAndVarSet())
             return;
-        AbstractShop existing = e.getShop();
-        Claim claimAtExpansion = gpPlugin.dataStore.getClaimAt(e.getLocation(), false, null);
-        Claim claimAtSign = gpPlugin.dataStore.getClaimAt(existing.getSignLocation(), false, null);
-        Claim claimAtContainer = gpPlugin.dataStore.getClaimAt(existing.getChestLocation(), false, null);
-        if (claimAtExpansion == null && claimAtSign == null && claimAtContainer == null) {
-            // no claims present
-            return;
-        }
-        if ((claimAtExpansion != claimAtSign &&
-                claimAtExpansion != claimAtContainer) ||
-                claimAtExpansion == null) {
-            // differing claims
-            e.setCancelled(true);
-            return;
-        }
-
-        String denialMsg = claimAtExpansion.checkPermission(e.getPlayer(), ClaimPermission.Build, null).get();
-        if (denialMsg == null) {
-            // no perms restrictions
-            return;
-        } else {
+        String denialMsg = denial(e.getPlayer(), e.getLocation(), ClaimPermission.Build);
+        if (denialMsg != null) {
             e.setCancelled(true);
             e.getPlayer().sendMessage(denialMsg);
         }
     }
 
-    // check for build permissions
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onShopDestroy(PlayerDestroyShopEvent e) {
         if (!checkPluginEnabledAndVarSet())
             return;
-        AbstractShop destroyed = e.getShop();
-        Claim claim = gpPlugin.dataStore.getClaimAt(destroyed.getChestLocation(), false, null);
-        if (claim == null) {
-            claim = gpPlugin.dataStore.getClaimAt(destroyed.getSignLocation(), false, null);
-            if (claim == null) {
-                // neither sign nor container is in a claim
-                if (e.getPlayer().hasPermission("shop.destroy") &&
-                    (destroyed.getOwnerUUID().equals(e.getPlayer().getUniqueId()) || 
-                        e.getPlayer().hasPermission("shop.destroy.other"))){
-                    // changing own shop, or bypassing
-                    return;
-                }
-                e.setCancelled(true);
-                return;
-            } else {
-                // only the sign is in a claim
-                e.setCancelled(true);
-                return;
-            }
-        }
-        if (!claim.contains(destroyed.getSignLocation(), false, false)) {
-            // only the container is in a claim
-            e.setCancelled(true);
-            return;
-        }
-        String denialMsg = claim.checkPermission(e.getPlayer(), ClaimPermission.Build, null).get();
-        if (denialMsg == null) {
-            // no perms restrictions
-            return;
-        } else {
-            e.setCancelled(true);
-            e.getPlayer().sendMessage(denialMsg); // need to double check this isn't duplicate
-        }
+        denyWithoutBuild(e, e.getPlayer(), e.getShop());
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onShopInit(PlayerInitializeShopEvent e) {
-        // unclear how this is scheduled/what it does in addition to createShop
-        if (!checkPluginEnabledAndVarSet())
-            return;
-
-        //TODO
-    }
-
-    // check for container permissions
+    // Lets players with container trust in the chest's claim open another player's shop chest.
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onShopOpen(PlayerOpenShopEvent e) {
-        // fired on container open
         if (!checkPluginEnabledAndVarSet())
             return;
-        AbstractShop opened = e.getShop();
-        Claim claim = gpPlugin.dataStore.getClaimAt(opened.getChestLocation(), false, null);
-        if (claim == null) {
-            claim = gpPlugin.dataStore.getClaimAt(opened.getSignLocation(), false, null);
-            if (claim == null) {
-                // neither sign nor container is in a claim
-                if (opened.getOwner().equals(e.getPlayer()) || e.getPlayer().hasPermission("shop.operator")){
-                    // opening own shop, or OP
-                    return;
-                }
-                e.setCancelled(true);
-                return;
-            } else {
-                // only the sign is in a claim
-                e.setCancelled(true);
-                return;
+        if (e.getTarget() != PlayerOpenShopEvent.OpenTarget.CHEST || e.getMode() == PlayerOpenShopEvent.OpenMode.OPEN_CONTAINER)
+            return;
+        Claim claim = gpPlugin.dataStore.getClaimAt(e.getShop().getChestLocation(), false, null);
+        // ClaimPermission.Inventory is container trust
+        if (claim != null && claim.checkPermission(e.getPlayer(), ClaimPermission.Inventory, null) == null) {
+            e.setMode(PlayerOpenShopEvent.OpenMode.OPEN_CONTAINER);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onClaimCreation(ClaimCreatedEvent e) {
+        if (!checkPluginEnabledAndVarSet())
+            return;
+        refuseClaimOverOthersShops(e, verifyShopsWithinClaim(e.getClaim(), null), e.getCreator());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onClaimResize(ClaimResizeEvent e) {
+        if (!checkPluginEnabledAndVarSet())
+            return;
+        refuseClaimOverOthersShops(e, verifyShopsWithinClaim(e.getTo(), e.getFrom()), e.getModifier());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onClaimTransfer(ClaimTransferEvent e) {
+        if (!checkPluginEnabledAndVarSet())
+            return;
+        refuseClaimOverOthersShops(e, verifyShopsWithinTransferredClaim(e.getClaim(), e.getNewOwner()), null);
+    }
+
+    private void denyWithoutBuild(Cancellable e, Player player, AbstractShop shop) {
+        String denialMsg = denial(player, shop.getChestLocation(), ClaimPermission.Build);
+        if (denialMsg == null)
+            denialMsg = denial(player, shop.getSignLocation(), ClaimPermission.Build);
+        if (denialMsg != null) {
+            e.setCancelled(true);
+            player.sendMessage(denialMsg);
+        }
+    }
+
+    /**
+     * GriefPrevention's denial message for the player at the location, or null if the location is unclaimed or the
+     * player has the permission there.
+     */
+    private @Nullable String denial(Player player, Location location, ClaimPermission permission) {
+        Claim claim = gpPlugin.dataStore.getClaimAt(location, false, null);
+        if (claim == null)
+            return null;
+        // checkPermission returns null when the permission is granted
+        Supplier<String> denial = claim.checkPermission(player, permission, null);
+        return denial == null ? null : denial.get();
+    }
+
+    /**
+     * Cancels a claim change refused by {@code result}, unless the actor is the console or a shop operator.
+     */
+    private void refuseClaimOverOthersShops(Cancellable e, @Nullable String result, @Nullable CommandSender actor) {
+        if (result == null || (actor != null && (!(actor instanceof Player) || isShopOperator(actor))))
+            return;
+        e.setCancelled(true);
+        if (actor != null)
+            actor.sendMessage(result);
+        else
+            plugin.getLogger().info("Refused GriefPrevention claim change: " + result);
+    }
+
+    private boolean isShopOperator(CommandSender sender) {
+        return plugin.usePerms() ? sender.hasPermission("shop.operator") : sender.isOp();
+    }
+
+    /**
+     * Checks the shops the claim covers that {@code previous} did not: each owner must be able to build in the claim,
+     * and admin shops may only be in admin claims.
+     *
+     * @return an error message, or null if every such shop may be in the claim
+     */
+    private @Nullable String verifyShopsWithinClaim(Claim c, @Nullable Claim previous) {
+        for (AbstractShop s : shopsWithin(c)) {
+            if (previous != null && covers(previous, s))
+                continue;
+            UUID owner = s.getOwnerUUID();
+            if (owner.equals(plugin.getShopHandler().getAdminUUID())) {
+                if (!c.isAdminClaim())
+                    return ADMIN_SHOPS_MESSAGE;
+            } else if (c.checkPermission(owner, ClaimPermission.Build, null) != null) {
+                return OTHERS_SHOPS_MESSAGE;
             }
         }
-        if (!claim.contains(opened.getSignLocation(), false, false)) {
-            // only the container is in a claim
-            e.setCancelled(true);
-            return;
+        return null;
+    }
+
+    // GP's Claim copy constructor sets both corners to the greater one, so the transfer is checked on the claim itself.
+    private @Nullable String verifyShopsWithinTransferredClaim(Claim c, @Nullable UUID newOwner) {
+        for (AbstractShop s : shopsWithin(c)) {
+            UUID owner = s.getOwnerUUID();
+            if (owner.equals(plugin.getShopHandler().getAdminUUID())) {
+                if (newOwner != null)
+                    return ADMIN_SHOPS_MESSAGE;
+            } else if (!owner.equals(newOwner) &&
+                    (owner.equals(c.getOwnerID()) || c.checkPermission(owner, ClaimPermission.Build, null) != null)) {
+                return OTHERS_SHOPS_MESSAGE;
+            }
         }
-        String denialMsg = claim.checkPermission(e.getPlayer(), ClaimPermission.Inventory, null).get(); // for some reason ClaimPermission.Container wasn't recognized, Inventory is the deprecated backwards-compatible term
-        if (denialMsg == null) {
-            // no perms restrictions
-            return;
-        } else {
-            e.setCancelled(true);
-            e.getPlayer().sendMessage(denialMsg); // need to double check this isn't duplicate
-        }
+        return null;
+    }
+
+    private List<AbstractShop> shopsWithin(Claim c) {
+        Location lesser = c.getLesserBoundaryCorner();
+        Location greater = c.getGreaterBoundaryCorner();
+        Location center = lesser.clone().add(greater.clone().subtract(lesser).multiply(0.5));
+        int chunkRadius = Math.max(greater.getBlockX() - lesser.getBlockX(), greater.getBlockZ() - lesser.getBlockZ()) / 32 + 1;
+        List<AbstractShop> shops = plugin.getShopHandler().getShopsNearLocation(center, chunkRadius);
+        shops.removeIf(s -> !covers(c, s));
+        return shops;
+    }
+
+    private boolean covers(Claim c, AbstractShop s) {
+        return c.contains(s.getChestLocation(), true, false) || c.contains(s.getSignLocation(), true, false);
     }
 
     private boolean checkPluginEnabledAndVarSet() {
@@ -209,109 +211,4 @@ public class GriefPreventionHookListener implements Listener {
         }
         return false;
     }
-
-    public void onClaimCreation(ClaimCreatedEvent e){
-        Claim newClaim = e.getClaim();
-        CommandSender creator = e.getCreator();
-        Player p = null;
-        if (creator instanceof Player){
-            p = (Player) creator;
-        }else{
-            plugin.getLogger().warning("Non-player attempting to create claim, ignoring potentially contained shops");
-            return;
-        }
-
-        String result = verifyShopsWithinClaim(newClaim);
-        if (result != null){
-            e.setCancelled(true);
-            p.sendMessage(result);
-        }
-    }
-
-    /**
-     * Ensure shops within a claim are owned by players of appropriate permission
-     * 
-     * @param Claim the claim to check
-     * @return an error message, or null if all shops pass checks
-     */
-
-    private @Nullable String verifyShopsWithinClaim(Claim c){
-        Player p = null;
-        if (!c.isAdminClaim()){
-            p = Bukkit.getPlayer(c.getOwnerID());
-        }
-        Location center = c.getLesserBoundaryCorner().add(
-            c.getGreaterBoundaryCorner().subtract(
-                c.getLesserBoundaryCorner()).multiply(0.5));
-        int chunkRadius = (int) (Math.max(c.getHeight(), c.getWidth())/2.0/16 + 1);
-
-        List<AbstractShop> shopsToCheck = plugin.getShopHandler().getShopsNearLocation(
-            center, chunkRadius);
-
-        for (AbstractShop s : shopsToCheck){
-            if (c.contains(s.getChestLocation(), true, true) || 
-                c.contains(s.getSignLocation(), true, true)){
-                if (!c.contains(s.getSignLocation(), true, true) || 
-                    !c.contains(s.getChestLocation(), true, true)){
-                    // c must contain both the sign and chest of each shop
-                    return "New claims must not split shops.";
-                }
-
-                // admin shops may only be within admin claims
-                if (s.getOwnerUUID().equals(plugin.getShopHandler().getAdminUUID())){
-                    if (!c.isAdminClaim()){
-                        return "Admin shops must exist in admin claims only.";
-                    }
-                }
-
-                String canBuild = c.checkPermission(s.getOwnerUUID(), ClaimPermission.Build, null).get();
-                if (p != s.getOwner().getPlayer() || 
-                    !p.hasPermission("shop.operator") ||
-                    canBuild != null){
-                    // new claim owner must be the owner of each contained shop, or OP, or have build perms in the claim
-                    return "You may not claim other players' shops.";
-                }
-            }
-            // ignore shops not within claim
-        }
-        // fall through if all contained shops match new claim owner
-        return null;
-    }
-
-    public void onClaimExpansion(ClaimChangeEvent e){
-        Claim newClaim = e.getTo();
-
-        String result = verifyShopsWithinClaim(newClaim);
-        if (result !=null){
-            e.setCancelled(true);
-            if (newClaim.getOwnerID() != null){
-                Bukkit.getPlayer(newClaim.getOwnerID()).sendMessage(result);
-            } else{
-                plugin.getLogger().info("Claim expansion: " + result);
-            }
-        }
-
-    }
-
-    public void onClaimTransfer(ClaimTransferEvent e){
-        Claim c = new Claim(e.getClaim());
-        c.ownerID = e.getNewOwner();
-
-        String result = verifyShopsWithinClaim(c);
-        if (result !=null){
-            e.setCancelled(true);
-            UUID oldOwner = e.getClaim().getOwnerID();
-            if (oldOwner != null){
-                Bukkit.getPlayer(e.getClaim().getOwnerID()).sendMessage(result);
-            } else{
-                plugin.getLogger().info("Claim transfer: " + result);
-            }
-        }
-
-    }
-
-    //TODO make sure config is respected - I think the listener setup handles this
-    //TODO handle admin claims gracefully (ownerID is null, "an administrator") - done
-    //TODO handle admin shops gracefully ("admin" or handler.getAdminUUID()) - done
-    //TODO address what happens if improperly-permissioned shops are present in claims when the plugin is updated - need input from boss
 }
