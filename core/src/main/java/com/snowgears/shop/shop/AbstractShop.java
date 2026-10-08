@@ -32,6 +32,8 @@ import static com.snowgears.shop.util.UtilMethods.isMCVersion17Plus;
 
 public abstract class AbstractShop {
 
+    public static final String NO_SAFE_SPOT_MESSAGE = ChatColor.RED + "There is no safe place to stand near this shop.";
+
     protected UUID id = UUID.randomUUID();
     protected boolean needsSave = false;
     protected boolean isLoaded = false;
@@ -580,7 +582,7 @@ public abstract class AbstractShop {
 
         Location loc = getTeleportLocation();
         if(loc == null) {
-            player.sendMessage(ChatColor.RED + "There is no safe place to stand near this shop.");
+            player.sendMessage(NO_SAFE_SPOT_MESSAGE);
             return;
         }
         player.teleport(loc);
